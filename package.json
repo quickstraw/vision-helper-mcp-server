@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "MCP server that adds vision capability to any LLM by routing image analysis to vision-capable OpenRouter models",
   "author": "Nathaniel McGraw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quickstraw/vision-helper-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/quickstraw/vision-helper-mcp-server/issues"
+  },
+  "homepage": "https://github.com/quickstraw/vision-helper-mcp-server",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
