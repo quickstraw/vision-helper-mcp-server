@@ -10,6 +10,18 @@ export function errorResult(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
 
+/**
+ * Truncate long result text at `limit` characters, appending a marker plus
+ * guidance so the calling model knows the response was cut short.
+ */
+export function truncateToLimit(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return (
+    `${text.slice(0, limit - 1)}…\n\n` +
+    `[Response truncated at ${limit} characters. Ask for a shorter analysis if more is needed.]`
+  );
+}
+
 /** Single source of truth for the "API key not configured" error. */
 export function missingApiKeyResult(): CallToolResult {
   return errorResult(

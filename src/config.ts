@@ -19,8 +19,10 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
   ABSOLUTE_MAX_IMAGE_SIZE,
+  DEFAULT_FALLBACK_MODEL,
   DEFAULT_MAX_IMAGE_SIZE,
   DEFAULT_MODEL,
+  DEFAULT_QUICK_MODEL,
   DEFAULT_REQUEST_TIMEOUT_MS,
 } from "./constants.js";
 
@@ -159,6 +161,18 @@ export async function getRequestTimeoutMs(): Promise<number> {
 export async function getEffectiveDefaultModel(): Promise<string> {
   const configured = (await getConfiguredModel())?.value.trim();
   return configured !== undefined && configured.length > 0 ? configured : DEFAULT_MODEL;
+}
+
+/** Resolve the quick analysis model (OPENROUTER_QUICK_MODEL), or DEFAULT_QUICK_MODEL. */
+export async function getEffectiveQuickModel(): Promise<string> {
+  const configured = (await lookupEnv("OPENROUTER_QUICK_MODEL"))?.value.trim();
+  return configured !== undefined && configured.length > 0 ? configured : DEFAULT_QUICK_MODEL;
+}
+
+/** Resolve the fallback model (OPENROUTER_FALLBACK_MODEL), or DEFAULT_FALLBACK_MODEL. */
+export async function getEffectiveFallbackModel(): Promise<string> {
+  const configured = (await lookupEnv("OPENROUTER_FALLBACK_MODEL"))?.value.trim();
+  return configured !== undefined && configured.length > 0 ? configured : DEFAULT_FALLBACK_MODEL;
 }
 
 /** Short, safe mask of a key for diagnostics (e.g. "sk-or-…a0"). */

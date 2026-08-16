@@ -6,7 +6,15 @@
  * are surfaced immediately with actionable messages.
  */
 
-import { MODELS_CACHE_TTL_MS, MODELS_LIST_TIMEOUT_MS, OPENROUTER_API_BASE } from "../constants.js";
+import {
+  DETAILED_DEFAULT_MAX_TOKENS,
+  DETAILED_REASONING_EFFORT,
+  MODELS_CACHE_TTL_MS,
+  MODELS_LIST_TIMEOUT_MS,
+  OPENROUTER_API_BASE,
+  QUICK_DEFAULT_MAX_TOKENS,
+  QUICK_REASONING_EFFORT,
+} from "../constants.js";
 import { LoadedImage } from "./images.js";
 
 /** Error carrying an HTTP status from OpenRouter plus the raw response body. */
@@ -30,6 +38,34 @@ export interface AnalyzeImageOptions {
   maxTokens?: number;
   temperature?: number;
   timeoutMs: number;
+  /**
+   * When true, apply speed-optimized defaults for a quick analysis:
+   * a low output-token cap and minimal reasoning effort. Callers can still
+   * override maxTokens; the reasoning effort is fixed to the fastest
+   * setting that reasoning models accept.
+   */
+  quick?: boolean;
+  /**
+   * When true, optimize for a detailed, thorough analysis: a higher reasoning
+   * effort and a higher default output-token cap than the provider default.
+   * Mutually exclusive with `quick`. Callers can still override maxTokens.
+   */
+  detailed?: boolean;
+  /**
+   * Alternate model to try automatically if the primary model's provider is
+   * busy or a request fails transiently (429 / 5xx / timeout / network error).
+   * When unset (or identical to `model`), no fallback is attempted.
+   */
+  fallbackModel?: string;
+}
+
+export interface AnalyzeImageResult {
+  /** The model's text reply. */
+  text: string;
+  /** The model that actually produced the reply (primary or fallback). */
+  model: string;
+  /** True when the primary model failed and the fallback reply was used. */
+  fallbackUsed: boolean;
 }
 
 export interface OpenRouterModelInfo {
@@ -107,11 +143,8 @@ function extractErrorHint(rawBody: string): string {
   return "";
 }
 
-/**
- * Send the images plus prompt to the vision model and return its text reply.
- * Retries up to 3 attempts on 429 / 5xx / network failures.
- */
-export async function analyzeImage(options: AnalyzeImageOptions): Promise<string> {
+/** Build the chat completion body for the given model. */
+function buildChatBody(options: AnalyzeImageOptions, model: string): Record<string, unknown> {
   const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
     { type: "text", text: options.prompt },
     ...options.images.map((image) => ({
@@ -121,12 +154,27 @@ export async function analyzeImage(options: AnalyzeImageOptions): Promise<string
   ];
 
   const body: Record<string, unknown> = {
-    model: options.model,
+    model,
     messages: [{ role: "user", content }],
   };
   if (options.maxTokens !== undefined) body.max_tokens = options.maxTokens;
   if (options.temperature !== undefined) body.temperature = options.temperature;
+  if (options.quick === true) {
+    if (body.max_tokens === undefined) body.max_tokens = QUICK_DEFAULT_MAX_TOKENS;
+    body.reasoning = { effort: QUICK_REASONING_EFFORT };
+  } else if (options.detailed === true) {
+    if (body.max_tokens === undefined) body.max_tokens = DETAILED_DEFAULT_MAX_TOKENS;
+    body.reasoning = { effort: DETAILED_REASONING_EFFORT };
+  }
+  return body;
+}
 
+/**
+ * Send the images plus prompt to the given model and return its text reply.
+ * Retries up to 3 attempts on 429 / 5xx / network failures.
+ */
+async function requestChatCompletion(options: AnalyzeImageOptions, model: string): Promise<string> {
+  const body = buildChatBody(options, model);
   const attempts = 3;
   let lastError: unknown = new Error("Unknown error calling OpenRouter.");
 
@@ -167,6 +215,58 @@ export async function analyzeImage(options: AnalyzeImageOptions): Promise<string
   }
 
   throw lastError;
+}
+
+/** True when the error looks like a busy/unavailable provider that a fallback could avoid. */
+function isFallbackEligible(error: unknown): boolean {
+  if (error instanceof VisionApiError) return error.status === 429 || error.status >= 500;
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError") return true;
+    if (/fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i.test(error.message)) return true;
+  }
+  return false;
+}
+
+/** Short, human-readable reason for an error, used in combined fallback failures. */
+function describeErrorBrief(error: unknown): string {
+  if (error instanceof VisionApiError) return `HTTP ${error.status}`;
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError") return "timeout";
+    if (/fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i.test(error.message)) return "network error";
+    return error.message;
+  }
+  return String(error);
+}
+
+/**
+ * Analyze the images with the primary model, then with the fallback model if
+ * the primary's provider is busy or fails transiently. Returns the reply plus
+ * the model that produced it.
+ */
+export async function analyzeImage(options: AnalyzeImageOptions): Promise<AnalyzeImageResult> {
+  try {
+    const text = await requestChatCompletion(options, options.model);
+    return { text, model: options.model, fallbackUsed: false };
+  } catch (primaryError) {
+    const fallbackModel = options.fallbackModel?.trim();
+    if (
+      fallbackModel !== undefined &&
+      fallbackModel.length > 0 &&
+      fallbackModel !== options.model &&
+      isFallbackEligible(primaryError)
+    ) {
+      try {
+        const text = await requestChatCompletion(options, fallbackModel);
+        return { text, model: fallbackModel, fallbackUsed: true };
+      } catch (fallbackError) {
+        throw new Error(
+          `Analysis failed on both the primary model '${options.model}' and the fallback model '${fallbackModel}'. ` +
+            `Primary: ${describeErrorBrief(primaryError)}. Fallback: ${describeErrorBrief(fallbackError)}.`
+        );
+      }
+    }
+    throw primaryError;
+  }
 }
 
 /**

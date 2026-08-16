@@ -1,8 +1,16 @@
 /** vision_helper_check_config tool: report where the API key and model are loaded from. */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DEFAULT_MODEL } from "../constants.js";
-import { getApiKey, getConfiguredModel, getMaxImageSize, getRequestTimeoutMs, maskKey } from "../config.js";
+import { DEFAULT_FALLBACK_MODEL, DEFAULT_MODEL, DEFAULT_QUICK_MODEL } from "../constants.js";
+import {
+  getApiKey,
+  getConfiguredModel,
+  getEffectiveFallbackModel,
+  getEffectiveQuickModel,
+  getMaxImageSize,
+  getRequestTimeoutMs,
+  maskKey,
+} from "../config.js";
 import { textResult } from "../services/results.js";
 import { CheckConfigSchema } from "../schemas.js";
 
@@ -22,6 +30,8 @@ Returns:
   A short markdown report with:
   - API key: present or missing, plus the source it was resolved from.
   - Default model: from OPENROUTER_MODEL, or the built-in default ('${DEFAULT_MODEL}').
+  - Quick model: from OPENROUTER_QUICK_MODEL, or the built-in default ('${DEFAULT_QUICK_MODEL}').
+  - Fallback model: tried automatically if the default model's provider is busy ('${DEFAULT_FALLBACK_MODEL}').
   - MAX_IMAGE_SIZE and request timeout.
 
 Examples:
@@ -37,6 +47,8 @@ Examples:
     async () => {
       const keyInfo = await getApiKey();
       const modelInfo = await getConfiguredModel();
+      const quickModel = await getEffectiveQuickModel();
+      const fallbackModel = await getEffectiveFallbackModel();
       const maxImageSize = await getMaxImageSize();
       const timeoutMs = await getRequestTimeoutMs();
 
@@ -49,6 +61,8 @@ Examples:
         modelInfo === null
           ? `- **Default model: not configured** — will fall back to '${DEFAULT_MODEL}'. Set OPENROUTER_MODEL, or pass a 'model' argument to vision_helper_analyze_image.`
           : `- **Default model: '${modelInfo.value}'** (from ${modelInfo.source}) — pass a 'model' argument to vision_helper_analyze_image to override per call.`,
+        `- **Quick model: '${quickModel}'** — used by vision_helper_quick_analyze. Set OPENROUTER_QUICK_MODEL, or pass a 'model' argument to override per call.`,
+        `- **Fallback model: '${fallbackModel}'** — used automatically by vision_helper_analyze_image if the primary model's provider is busy or errors (429/5xx/timeout/network). Set OPENROUTER_FALLBACK_MODEL to override.`,
         `- **MAX_IMAGE_SIZE: ${maxImageSize} bytes** (${(maxImageSize / 1024 / 1024).toFixed(1)} MB)`,
         `- **Request timeout: ${timeoutMs / 1000}s**`,
       ];

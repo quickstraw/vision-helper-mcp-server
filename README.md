@@ -58,12 +58,15 @@ On non-Windows platforms only step 1 applies.
 | Variable | Purpose | Default |
 |---|---|---|
 | `OPENROUTER_API_KEY` | OpenRouter API key (required for analysis) | — |
-| `OPENROUTER_MODEL` | Default vision model ID | `google/gemini-3.6-flash` |
+| `OPENROUTER_MODEL` | Default vision model ID | `qwen/qwen3.8-max` |
+| `OPENROUTER_FALLBACK_MODEL` | Fallback model tried automatically when the primary model's provider is busy or fails | `google/gemini-3.7-flash` |
+| `OPENROUTER_QUICK_MODEL` | Default model for `vision_helper_quick_analyze` | `meta/muse-glimmer-30b` |
 | `MAX_IMAGE_SIZE` | Max image payload bytes | `10485760` (10 MB) |
 | `OPENROUTER_TIMEOUT_MS` | Per-request timeout | `120000` (120 s) |
 
 > The model can also be chosen **per call** via the `model` argument of
-> `vision_helper_analyze_image`, overriding the environment default.
+> `vision_helper_analyze_image` / `vision_helper_quick_analyze`, overriding the
+> environment default.
 
 ### Kilo (VS Code extension) configuration
 
@@ -79,7 +82,7 @@ Windows):
   "enabled": true,
   "timeout": 120000,
   "environment": {
-    "OPENROUTER_MODEL": "google/gemini-3.6-flash"
+    "OPENROUTER_MODEL": "qwen/qwen3.8-max"
   }
 }
 ```
@@ -98,7 +101,7 @@ block only if you want it explicit in the config.
       "command": "vision-helper-mcp",
       "env": {
         "OPENROUTER_API_KEY": "sk-or-v1-...",
-        "OPENROUTER_MODEL": "google/gemini-3.6-flash"
+        "OPENROUTER_MODEL": "qwen/qwen3.8-max"
       }
     }
   }
@@ -119,9 +122,15 @@ Analyze one or more images with an OpenRouter vision model.
 |---|---|---|
 | `image` | `string \| string[]` | **Required.** An http(s) URL, local file path, `file://` URI, `data:` URI, or raw base64 string. Pass an array (up to 5) to analyze several images together, e.g. to compare screenshots. Only PNG, JPEG, WebP, and GIF are accepted (the formats OpenRouter supports for vision input); relative file paths resolve against the MCP client's working directory, so prefer absolute paths or URLs. |
 | `prompt` | `string` | Optional instruction, e.g. `"Transcribe all text in this screenshot"`. Defaults to a general detailed description. |
-| `model` | `string` | OpenRouter model ID, e.g. `google/gemini-3.6-flash`. Defaults to `OPENROUTER_MODEL`, then to the built-in default. |
+| `model` | `string` | OpenRouter model ID, e.g. `qwen/qwen3.8-max`. Defaults to `OPENROUTER_MODEL`, then to the built-in default. |
 | `max_tokens` | `number` | Max tokens for the answer (64–16000). |
 | `temperature` | `number` | Sampling temperature (0–2). |
+
+If the model's provider is busy or a request fails transiently (HTTP 429, 5xx,
+timeout, or network error), the server automatically retries with the
+`OPENROUTER_FALLBACK_MODEL` model (`google/gemini-3.7-flash` by default) so the
+analysis does not fail. The response header shows which model actually answered
+and notes when a fallback was used.
 
 Examples of things to ask your assistant:
 
@@ -129,6 +138,42 @@ Examples of things to ask your assistant:
 - "Analyze the screenshot at C:\Users\me\Pictures\shot.png"
 - "Compare these two images: img1.png and img2.png" (pass an array)
 - "Read the text from this image and list the objects: <path>"
+
+### `vision_helper_quick_analyze`
+
+Analyze an image **fast and cheap** for time-sensitive checks. Uses a low-latency,
+high-throughput default model, caps its output, and forces minimal reasoning —
+ideal for a quick yes/no, a short caption, or an object check when speed matters
+more than exhaustive detail.
+
+| Argument | Type | Description |
+|---|---|---|
+| `image` | `string` | **Required.** An http(s) URL, local file path, `file://` URI, `data:` URI, or raw base64 string. |
+| `prompt` | `string` | A short question or instruction (max 500 chars), e.g. `"Is this icon red?"`. Defaults to a concise description. |
+| `model` | `string` | OpenRouter model ID. Defaults to `OPENROUTER_QUICK_MODEL`, then to `meta/muse-glimmer-30b`. |
+
+The default `meta/muse-glimmer-30b` is chosen for cost and speed (very cheap per
+token, low latency, high throughput); override it globally with
+`OPENROUTER_QUICK_MODEL` or per call with the `model` argument.
+
+Examples of things to ask your assistant:
+
+- "Quickly, what is in this image? <path>"
+- "Is this screenshot blurry? <url>"
+- "Give me a one-line caption for this image: <path>"
+
+### Which analysis tool should I use?
+
+| Need | Tool |
+|---|---|
+| Detailed, thorough understanding — transcribe all text, describe objects/people/layout, reason about complex content, or compare several images at once | `vision_helper_analyze_image` |
+| A fast, cheap, concise answer — a yes/no, a short caption, an object/color check, "is this blurry?", or a high-volume/time-sensitive check | `vision_helper_quick_analyze` |
+
+Both tools describe images to an LLM that cannot see them. Prefer
+`vision_helper_analyze_image` when completeness, precision, or detail matters more
+than speed (it can also take an **array** of up to 5 images to compare). Prefer
+`vision_helper_quick_analyze` when latency and cost matter more than detail and a
+single image needs just a quick read.
 
 ### `vision_helper_list_models`
 
@@ -147,7 +192,9 @@ size/time limits. The key is always masked (e.g. `sk-or-…40a0`).
 - The server starts even when no key is configured; key resolution is lazy, so a key
   set with `setx` works without restarting anything.
 - Chat-completion requests retry up to 3 times on 429 / 5xx / network errors, honoring
-  `Retry-After` when present.
+  `Retry-After` when present. If a model's provider is still busy after retries,
+  `vision_helper_analyze_image` automatically falls back to the
+  `OPENROUTER_FALLBACK_MODEL` model (`google/gemini-3.7-flash` by default) before giving up.
 - Image downloads are streamed with a hard byte cap and a 30 s timeout; MIME type is
   sniffed from magic bytes, so raw base64 payloads need no explicit type. Only the
   formats OpenRouter supports for vision input are accepted: PNG, JPEG, WebP, GIF
@@ -173,7 +220,7 @@ size/time limits. The key is always masked (e.g. `sk-or-…40a0`).
 | "The N images total X bytes, exceeding the aggregate limit" | Analyzes are capped at 25 MB total across all images per request — split into multiple calls. |
 | "OpenRouter vision models only accept PNG, JPEG, WebP, or GIF" | Convert the image (e.g. to PNG/JPEG) and retry — these are the formats OpenRouter supports for vision input. |
 | "Error: OpenRouter rate limit or quota exceeded (HTTP 429)" | Wait a moment and retry; the server already retries transient 429s automatically. |
-| HTTP 400 on a valid image | Some models accept fewer formats — try `google/gemini-3.6-flash` or `openai/gpt-5` family, or convert the image to PNG/JPEG. |
+| HTTP 400 on a valid image | Some models accept fewer formats — try `qwen/qwen3.8-max` or `openai/gpt-5` family, or convert the image to PNG/JPEG. |
 
 ## Security
 

@@ -35,7 +35,7 @@ export const AnalyzeImageSchema = z
       .max(200)
       .optional()
       .describe(
-        "OpenRouter model ID to use for vision analysis, e.g. 'google/gemini-3.6-flash'. " +
+        "OpenRouter model ID to use for vision analysis, e.g. 'qwen/qwen3.8-max'. " +
           "Defaults to the OPENROUTER_MODEL environment variable, then to a built-in default. " +
           "Use vision_helper_list_models to discover current vision-capable models."
       ),
@@ -52,6 +52,36 @@ export const AnalyzeImageSchema = z
       .max(2)
       .optional()
       .describe("Sampling temperature (0-2). Lower is more deterministic."),
+  })
+  .strict();
+
+export const QuickAnalyzeImageSchema = z
+  .object({
+    image: z
+      .string()
+      .min(1)
+      .describe(
+        "A single image. Accepted forms: an http(s) URL, a local file path, a file:// URI, a data: URI (data:image/png;base64,...), or a raw base64 string."
+      ),
+    prompt: z
+      .string()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe(
+        "Optional instruction for the vision model, e.g. 'Is this image blurry?' or 'List the objects'. " +
+          "Keep it short — this is a fast analysis. When omitted, a concise default is used."
+      ),
+    model: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        "OpenRouter model ID to use for this fast analysis. " +
+          "Defaults to the OPENROUTER_QUICK_MODEL environment variable, then to 'meta/muse-glimmer-30b' " +
+          "(cheap, low-latency, high-throughput)."
+      ),
   })
   .strict();
 
