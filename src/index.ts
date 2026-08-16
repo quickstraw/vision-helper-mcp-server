@@ -12,6 +12,9 @@
  *   - vision_helper_check_config  : diagnose API key / model configuration
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { STDIO_MAX_BUFFER_SIZE } from "./constants.js";
@@ -19,6 +22,22 @@ import { registerAnalyzeImageTool } from "./tools/analyzeImage.js";
 import { registerListModelsTool } from "./tools/listModels.js";
 import { registerCheckConfigTool } from "./tools/checkConfig.js";
 import { registerQuickAnalyzeTool } from "./tools/quickAnalyze.js";
+
+/**
+ * Read the package version from the shipped package.json. The package.json is
+ * one directory above both src/ and dist/, so the same relative lookup works
+ * in development and when run from the installed npm tarball.
+ */
+function readServerVersion(): string {
+  try {
+    const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as { version?: unknown };
+    if (typeof parsed.version === "string" && parsed.version.length > 0) return parsed.version;
+  } catch {
+    /* not present/parse/unreadable — fall through to a placeholder */
+  }
+  return "0.0.0";
+}
 
 const USAGE = `Vision Helper MCP Server
 Adds vision capability to any LLM via OpenRouter vision models.
@@ -54,7 +73,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "vision-helper-mcp-server",
-    version: "1.0.0",
+    version: readServerVersion(),
   });
 
   registerAnalyzeImageTool(server);
