@@ -26,8 +26,8 @@ export function truncateToLimit(text: string, limit: number): string {
 export function missingApiKeyResult(): CallToolResult {
   return errorResult(
     "Error: No OpenRouter API key found. Set OPENROUTER_API_KEY in your MCP client's " +
-      "environment, or set it as a Windows user environment variable with: " +
-      "setx OPENROUTER_API_KEY sk-or-v1-... (then restart the MCP client). " +
-      "Run vision_helper_check_config to verify."
+      "environment (then restart the client), or as a Windows user environment variable: " +
+      "setx OPENROUTER_API_KEY sk-or-v1-... — the server re-reads the registry periodically, " +
+      "so no client restart is needed. Run vision_helper_check_config to verify."
   );
 }

@@ -56,12 +56,12 @@ Examples:
         "# Vision Helper MCP configuration",
         "",
         keyInfo === null
-          ? "- **API key: MISSING** — Set OPENROUTER_API_KEY in your MCP client's environment, or run: setx OPENROUTER_API_KEY sk-or-v1-... (then fully restart the MCP client so it picks up the new value)."
+          ? "- **API key: MISSING** — Set OPENROUTER_API_KEY in your MCP client's environment (then restart the client), or run: setx OPENROUTER_API_KEY sk-or-v1-... (the server re-reads the registry periodically, so no client restart is needed)."
           : `- **API key: present** (${maskKey(keyInfo.value)}) — resolved from: ${keyInfo.source}`,
         modelInfo === null
           ? `- **Default model: not configured** — will fall back to '${DEFAULT_MODEL}'. Set OPENROUTER_MODEL, or pass a 'model' argument to vision_helper_analyze_image.`
           : `- **Default model: '${modelInfo.value}'** (from ${modelInfo.source}) — pass a 'model' argument to vision_helper_analyze_image to override per call.`,
-        `- **Quick model: '${quickModel}'** — used by vision_helper_quick_analyze. Set OPENROUTER_QUICK_MODEL, or pass a 'model' argument to override per call.`,
+        `- **Quick model: '${quickModel}'** — used when 'quick: true' is passed to vision_helper_analyze_image. Set OPENROUTER_QUICK_MODEL, or pass a 'model' argument to override per call.`,
         `- **Fallback model: '${fallbackModel}'** — used automatically by vision_helper_analyze_image if the primary model's provider is busy or errors (429/5xx/timeout/network). Set OPENROUTER_FALLBACK_MODEL to override.`,
         `- **MAX_IMAGE_SIZE: ${maxImageSize} bytes** (${(maxImageSize / 1024 / 1024).toFixed(1)} MB)`,
         `- **Request timeout: ${timeoutMs / 1000}s**`,

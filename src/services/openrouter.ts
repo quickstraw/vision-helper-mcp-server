@@ -107,7 +107,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function extractContentText(data: OpenRouterChatResponse): string {
+/** Cap on how long a `Retry-After` header may delay a retry. */
+const MAX_RETRY_AFTER_MS = 15_000;
+
+/** Network-level failure markers that are worth retrying. */
+const NETWORK_ERROR_RE = /fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i;
+
+/** Backoff delay before a retry, honoring a capped `Retry-After` header. */
+function retryDelayMs(response: Response, attempt: number): number {
+  const rawRetryAfterMs = Number(response.headers.get("retry-after") ?? "0") * 1000;
+  const retryAfterMs = Number.isFinite(rawRetryAfterMs) && rawRetryAfterMs > 0 ? rawRetryAfterMs : 0;
+  const baseMs = attempt === 1 ? 1_500 : 3_000;
+  return Math.min(Math.max(retryAfterMs, baseMs), MAX_RETRY_AFTER_MS);
+}
+
+/** Extract the model's text reply from a chat completion response. Exported for unit tests. */
+export function extractContentText(data: OpenRouterChatResponse): string {
   const content = data.choices?.[0]?.message?.content;
   if (typeof content === "string") {
     const trimmed = content.trim();
@@ -185,7 +200,7 @@ async function requestChatCompletion(options: AnalyzeImageOptions, model: string
         headers: {
           Authorization: `Bearer ${options.apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://github.com/vision-helper-mcp",
+          "HTTP-Referer": "https://github.com/quickstraw/vision-helper-mcp-server",
           "X-OpenRouter-Title": "Vision Helper MCP",
           "User-Agent": "Vision-Helper-MCP/1.0",
         },
@@ -194,7 +209,13 @@ async function requestChatCompletion(options: AnalyzeImageOptions, model: string
       });
 
       if (response.ok) {
-        const data = (await response.json()) as OpenRouterChatResponse;
+        let data: OpenRouterChatResponse;
+        try {
+          data = (await response.json()) as OpenRouterChatResponse;
+        } catch {
+          // A 2xx body that is not JSON will not fix itself — fail immediately.
+          throw new VisionApiError(0, "OpenRouter returned a malformed (non-JSON) response body.", "");
+        }
         return extractContentText(data);
       }
 
@@ -202,15 +223,14 @@ async function requestChatCompletion(options: AnalyzeImageOptions, model: string
       const rawBody = await response.text();
       if (status === 429 || status >= 500) {
         lastError = new VisionApiError(status, `OpenRouter returned HTTP ${status}.`, rawBody);
-        const retryAfterMs = Number(response.headers.get("retry-after") ?? "0") * 1000;
-        await sleep(Math.max(retryAfterMs, attempt === 1 ? 1_500 : 3_000));
+        if (attempt < attempts) await sleep(retryDelayMs(response, attempt));
         continue;
       }
       throw new VisionApiError(status, `OpenRouter returned HTTP ${status}.`, rawBody);
     } catch (error) {
       if (error instanceof VisionApiError) throw error;
       lastError = error;
-      await sleep(attempt === 1 ? 1_500 : 3_000);
+      if (attempt < attempts) await sleep(attempt === 1 ? 1_500 : 3_000);
     }
   }
 
@@ -222,7 +242,7 @@ function isFallbackEligible(error: unknown): boolean {
   if (error instanceof VisionApiError) return error.status === 429 || error.status >= 500;
   if (error instanceof Error) {
     if (error.name === "TimeoutError") return true;
-    if (/fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i.test(error.message)) return true;
+    if (NETWORK_ERROR_RE.test(error.message)) return true;
   }
   return false;
 }
@@ -232,7 +252,7 @@ function describeErrorBrief(error: unknown): string {
   if (error instanceof VisionApiError) return `HTTP ${error.status}`;
   if (error instanceof Error) {
     if (error.name === "TimeoutError") return "timeout";
-    if (/fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i.test(error.message)) return "network error";
+    if (NETWORK_ERROR_RE.test(error.message)) return "network error";
     return error.message;
   }
   return String(error);
@@ -355,6 +375,8 @@ export function describeApiError(error: unknown): string {
           `Error: The request was rejected by OpenRouter (HTTP 400). ${hint ? `Details: ${hint}` : ""}` +
           " Check that the image is a supported format and the model supports image input."
         );
+      case 0:
+        return "Error: OpenRouter returned a malformed (non-JSON) response. Try again, or use a different model.";
       default:
         return `Error: OpenRouter request failed with HTTP ${error.status}. ${hint ? `Details: ${hint}` : ""} Retry with a different model if this persists.`;
     }
@@ -364,7 +386,7 @@ export function describeApiError(error: unknown): string {
   }
   if (error instanceof Error && error.message) {
     const message = error.message;
-    if (/fetch failed|ECONNRESET|ENOTFOUND|getaddrinfo/i.test(message)) {
+    if (NETWORK_ERROR_RE.test(message)) {
       return "Error: Could not reach OpenRouter (network error). Check your internet connection and retry.";
     }
     return `Error: ${message}`;

@@ -13,6 +13,8 @@
  *
  * Reading the registry directly makes a key set with `setx` work even when
  * the MCP client was started from a GUI and never re-read its environment.
+ * Registry values are cached briefly (REGISTRY_CACHE_TTL_MS) and re-read
+ * periodically, so an updated `setx` is picked up without a client restart.
  */
 
 import { execFile } from "node:child_process";
@@ -43,14 +45,20 @@ export interface ResolvedValue {
   source: string;
 }
 
-let registryCache: { user: RegistryEnv; system: RegistryEnv } | null = null;
+/**
+ * How long parsed registry values are cached before being re-read, so
+ * `setx` changes are picked up without restarting the MCP client.
+ */
+const REGISTRY_CACHE_TTL_MS = 60_000;
+
+let registryCache: { user: RegistryEnv; system: RegistryEnv; at: number } | null = null;
 
 function isWindows(): boolean {
   return process.platform === "win32";
 }
 
-/** Parse `reg query` output into { NAME -> { value, expand } }. */
-function parseRegOutput(stdout: string): RegistryEnv {
+/** Parse `reg query` output into { NAME -> { value, expand } }. Exported for unit tests. */
+export function parseRegOutput(stdout: string): RegistryEnv {
   const result: RegistryEnv = {};
   const lineRe = /^\s*(.+?)\s+REG_(EXPAND_)?SZ\s+(.*)$/;
   for (const line of stdout.split(/\r?\n/)) {
@@ -79,17 +87,18 @@ async function readRegistryEnv(scope: "user" | "system"): Promise<RegistryEnv> {
 }
 
 async function getRegistryEnv(): Promise<{ user: RegistryEnv; system: RegistryEnv }> {
-  if (registryCache === null) {
+  if (registryCache === null || Date.now() - registryCache.at >= REGISTRY_CACHE_TTL_MS) {
     registryCache = {
       user: await readRegistryEnv("user"),
       system: await readRegistryEnv("system"),
+      at: Date.now(),
     };
   }
   return registryCache;
 }
 
-/** Expand %VAR% references (REG_EXPAND_SZ) using process env + registry values. */
-function expandRegistryValue(raw: string, all: Record<string, string>): string {
+/** Expand %VAR% references (REG_EXPAND_SZ) using process env + registry values. Exported for unit tests. */
+export function expandRegistryValue(raw: string, all: Record<string, string>): string {
   return raw.replace(/%([^%]+)%/g, (_match, name: string) => all[name] ?? "");
 }
 
@@ -157,22 +166,25 @@ export async function getRequestTimeoutMs(): Promise<number> {
   return Math.min(parsed, 600_000);
 }
 
+/** Resolve an optional model env var, falling back to the built-in default. */
+async function getEffectiveModel(envName: string, fallback: string): Promise<string> {
+  const configured = (await lookupEnv(envName))?.value.trim();
+  return configured !== undefined && configured.length > 0 ? configured : fallback;
+}
+
 /** Model that would be used if the caller passes no `model` argument. */
 export async function getEffectiveDefaultModel(): Promise<string> {
-  const configured = (await getConfiguredModel())?.value.trim();
-  return configured !== undefined && configured.length > 0 ? configured : DEFAULT_MODEL;
+  return getEffectiveModel("OPENROUTER_MODEL", DEFAULT_MODEL);
 }
 
 /** Resolve the quick analysis model (OPENROUTER_QUICK_MODEL), or DEFAULT_QUICK_MODEL. */
 export async function getEffectiveQuickModel(): Promise<string> {
-  const configured = (await lookupEnv("OPENROUTER_QUICK_MODEL"))?.value.trim();
-  return configured !== undefined && configured.length > 0 ? configured : DEFAULT_QUICK_MODEL;
+  return getEffectiveModel("OPENROUTER_QUICK_MODEL", DEFAULT_QUICK_MODEL);
 }
 
 /** Resolve the fallback model (OPENROUTER_FALLBACK_MODEL), or DEFAULT_FALLBACK_MODEL. */
 export async function getEffectiveFallbackModel(): Promise<string> {
-  const configured = (await lookupEnv("OPENROUTER_FALLBACK_MODEL"))?.value.trim();
-  return configured !== undefined && configured.length > 0 ? configured : DEFAULT_FALLBACK_MODEL;
+  return getEffectiveModel("OPENROUTER_FALLBACK_MODEL", DEFAULT_FALLBACK_MODEL);
 }
 
 /** Short, safe mask of a key for diagnostics (e.g. "sk-or-…a0"). */

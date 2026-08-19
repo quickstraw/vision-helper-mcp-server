@@ -21,17 +21,7 @@ export function registerListModelsTool(server: McpServer): void {
       title: "List Vision Models on OpenRouter (Vision Helper)",
       description: `List vision-capable models currently available on OpenRouter, so you (or the user) can pick which model to use for image analysis.
 
-Models are filtered to those that accept image input. Use the 'search' argument to narrow by provider or family (e.g. 'gemini', 'claude', 'qwen', 'gpt'), and limit/offset for pagination.
-
-Args:
-  - search (string, optional): Case-insensitive substring filter on model ID or name.
-  - limit (number, default 25, max 100): Maximum number of models to return.
-  - offset (number, default 0): Number of models to skip.
-  - response_format ('markdown' | 'json', default 'markdown'): Output style.
-
-Returns:
-  For 'markdown': a compact list of model IDs with provider, context length, and input price.
-  For 'json': structured array with has_more / next_offset for pagination.
+Models are filtered to those that accept image input. Use the 'search' argument to narrow by provider or family (e.g. 'gemini', 'claude', 'qwen', 'gpt'), and limit/offset for pagination. Returns a compact list of model IDs with provider, context length, and input price.
 
 Examples:
   - "Which vision models can I use?" -> no arguments
@@ -67,24 +57,6 @@ Examples:
             `No vision models matched ${needle ? `'${params.search}'` : "the filter"}. ` +
               `Try a broader search (e.g. 'gemini', 'qwen', 'claude'), or run without 'search'.`
           );
-        }
-
-        if (params.response_format === "json") {
-          const payload = {
-            total: filtered.length,
-            count: page.length,
-            offset: params.offset,
-            has_more: hasMore,
-            next_offset: nextOffset,
-            models: page.map((m) => ({
-              id: m.id,
-              name: m.name,
-              context_length: m.contextLength,
-              prompt_price_per_1m_tokens: m.promptPricePerM,
-              description: m.description.slice(0, 200),
-            })),
-          };
-          return textResult(JSON.stringify(payload, null, 2));
         }
 
         const lines: string[] = [

@@ -20,6 +20,7 @@ import { isIP } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+  ABSOLUTE_MAX_IMAGE_SIZE,
   IMAGE_DOWNLOAD_TIMEOUT_MS,
   SUPPORTED_FORMATS,
   SUPPORTED_IMAGE_TYPES,
@@ -132,7 +133,7 @@ function enforceSize(buf: Buffer, maxBytes: number): void {
   if (buf.length > maxBytes) {
     throw new VisionImageError(
       `Image is ${buf.length} bytes, which exceeds MAX_IMAGE_SIZE (${maxBytes} bytes). ` +
-        `Resize or compress the image, or raise MAX_IMAGE_SIZE (up to 50 MB).`
+        `Resize or compress the image, or raise MAX_IMAGE_SIZE (up to ${ABSOLUTE_MAX_IMAGE_SIZE / (1024 * 1024)} MB).`
     );
   }
 }

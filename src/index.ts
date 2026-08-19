@@ -7,7 +7,7 @@
  *
  * Tools:
  *   - vision_helper_analyze_image : analyze image(s) from URL / file path / base64
- *   - vision_helper_quick_analyze : fast, cheap image analysis
+ *                                   (pass quick: true for fast, cheap analysis)
  *   - vision_helper_list_models   : list vision models currently on OpenRouter
  *   - vision_helper_check_config  : diagnose API key / model configuration
  */
@@ -21,7 +21,6 @@ import { STDIO_MAX_BUFFER_SIZE } from "./constants.js";
 import { registerAnalyzeImageTool } from "./tools/analyzeImage.js";
 import { registerListModelsTool } from "./tools/listModels.js";
 import { registerCheckConfigTool } from "./tools/checkConfig.js";
-import { registerQuickAnalyzeTool } from "./tools/quickAnalyze.js";
 
 /**
  * Read the package version from the shipped package.json. The package.json is
@@ -46,7 +45,7 @@ Usage: vision-helper-mcp [--help]
 
 Tools:
   vision_helper_analyze_image  Analyze image(s) from URL, file path, data URI, or base64
-  vision_helper_quick_analyze  Fast, cheap image analysis for time-sensitive checks
+                               (pass quick: true for a fast, cheap single-image analysis)
   vision_helper_list_models    List vision-capable models on OpenRouter
   vision_helper_check_config   Show where the API key and default model are loaded from
 
@@ -57,8 +56,8 @@ Configuration (environment variables):
   OPENROUTER_FALLBACK_MODEL Optional. Fallback model tried automatically when
                          the primary model's provider is busy/fails
                          (default google/gemini-3.7-flash).
-  OPENROUTER_QUICK_MODEL Optional. Default model ID for vision_helper_quick_analyze
-                         (default meta/muse-glimmer-30b).
+  OPENROUTER_QUICK_MODEL Optional. Default model ID when quick: true is passed to
+                         vision_helper_analyze_image (default meta/muse-glimmer-30b).
   MAX_IMAGE_SIZE         Optional. Max image payload bytes (default 10485760).
   OPENROUTER_TIMEOUT_MS  Optional. Request timeout in ms (default 120000).
 
@@ -79,7 +78,6 @@ async function main(): Promise<void> {
   registerAnalyzeImageTool(server);
   registerListModelsTool(server);
   registerCheckConfigTool(server);
-  registerQuickAnalyzeTool(server);
 
   const transport = new StdioServerTransport(undefined, undefined, { maxBufferSize: STDIO_MAX_BUFFER_SIZE });
   await server.connect(transport);

@@ -7,15 +7,18 @@ import {
   DEFAULT_ANALYSIS_PROMPT,
   DEFAULT_FALLBACK_MODEL,
   DEFAULT_MODEL,
-  DETAILED_REASONING_EFFORT,
+  DEFAULT_QUICK_MODEL,
+  DEFAULT_QUICK_PROMPT,
   MAX_IMAGE_COUNT,
   MAX_TOTAL_IMAGE_BYTES,
+  QUICK_DEFAULT_MAX_TOKENS,
   SUPPORTED_FORMATS,
 } from "../constants.js";
 import {
   getApiKey,
   getEffectiveDefaultModel,
   getEffectiveFallbackModel,
+  getEffectiveQuickModel,
   getMaxImageSize,
   getRequestTimeoutMs,
 } from "../config.js";
@@ -31,36 +34,15 @@ export function registerAnalyzeImageTool(server: McpServer): void {
     "vision_helper_analyze_image",
     {
       title: "Analyze Image with a Vision Model (Vision Helper)",
-      description: `Analyze one or more images using a vision-capable model from OpenRouter. Use this whenever you need to know what is in an image but you cannot see images yourself.
+      description: `Analyze one or more images using a vision-capable model from OpenRouter, returning the model's analysis as text. Use this whenever you need to know what is in an image but you cannot see images yourself.
 
-This is the **detailed analysis** tool. Use it when you need a thorough understanding of an image: transcribe all readable text, describe objects/people/colors/layout, reason carefully about ambiguous or complex content, or compare several images — pass an array (up to ${MAX_IMAGE_COUNT}) to analyze them together. It requests a higher reasoning effort (${DETAILED_REASONING_EFFORT}) and allows a longer answer by default, so it is built for completeness and precision rather than speed. It uses a high-quality model by default ('${DEFAULT_MODEL}').
+Default mode is **detailed analysis**: use it for thorough understanding — transcribe all readable text, describe objects/people/colors/layout, reason about ambiguous or complex content, or compare several images (pass an array, up to ${MAX_IMAGE_COUNT}). It requests high reasoning effort and a higher token budget, and uses a high-quality model by default ('${DEFAULT_MODEL}').
 
-When NOT to use this: if you only need a fast, cheap, low-latency answer where a concise result is fine — a quick yes/no, a short caption, an object check, or "is this image blurry?" — prefer vision_helper_quick_analyze instead. Choose this tool when completeness, precision, or detail matters more than speed; choose quick_analyze when speed/cost matter more than detail.
+Pass **quick: true** for a fast, cheap analysis of a single image — a yes/no, a short caption, or an object/color check. Quick mode uses the quick model ('${DEFAULT_QUICK_MODEL}'), caps output at ${QUICK_DEFAULT_MAX_TOKENS} tokens, and forces minimal reasoning.
 
-This is the Vision Helper MCP server's own analysis tool (distinct from any other vision server you may have configured). It loads the image(s) — from a URL, a local file path, a file:// URI, a data: URI, or raw base64 — and sends them to a vision model, then returns that model's analysis as text.
+Accepts an http(s) URL, local file path, file:// URI, data: URI, or raw base64. Only ${SUPPORTED_FORMATS} are accepted (per OpenRouter); remote URLs are validated against private/internal hosts before fetching. Relative file paths resolve against the server's working directory — prefer absolute paths or URLs. If the model's provider is busy or fails transiently (429/5xx/timeout/network), the request is retried, then falls back to the fallback model ('${DEFAULT_FALLBACK_MODEL}') automatically (detailed mode).
 
-Security notes: local files are read and sent to OpenRouter only when explicitly requested; only image content is uploaded and only if it is a supported format (${SUPPORTED_FORMATS}, per OpenRouter). Remote URLs are validated against private/internal hosts and redirects before fetching.
-
-Args:
-  - image (string | string[]): Image source(s). Accepted forms: http(s) URL, local file path, file:// URI, data: URI (data:image/png;base64,...), or raw base64. Pass an array to analyze several images together (e.g. to compare them). Relative file paths resolve against the MCP client's working directory — prefer absolute paths or URLs.
-  - prompt (string, optional): What the vision model should look for, e.g. 'Transcribe all text in this screenshot' or 'Describe the objects and colors'. Defaults to a general detailed description.
-  - model (string, optional): OpenRouter model ID, e.g. 'qwen/qwen3.8-max'. Defaults to the OPENROUTER_MODEL environment variable, then to '${DEFAULT_MODEL}'. Use vision_helper_list_models to see current options. If this model's provider is busy or fails (HTTP 429 / 5xx / timeout / network error), the request automatically falls back to the OPENROUTER_FALLBACK_MODEL model ('${DEFAULT_FALLBACK_MODEL}') instead of failing.
-  - max_tokens (number, optional): Max tokens for the answer (64-16000).
-  - temperature (number, optional): Sampling temperature (0-2).
-
-Returns:
-  Text containing the vision model's analysis, prefixed with the model and image sources used. If a fallback model handled the request, its name is shown and the header notes the fallback. Long analyses are truncated at ${CHARACTER_LIMIT} characters with a marker.
-
-Examples:
-  - "What is in this image? https://example.com/photo.jpg" -> image="https://example.com/photo.jpg"
-  - "Read the text in this screenshot: C:\\Users\\me\\Pictures\\shot.png" -> image="C:\\Users\\me\\Pictures\\shot.png"
-  - "Compare these two images: img1.png and img2.png" -> image=["img1.png", "img2.png"]
-
-Error Handling:
-  - "Error: No OpenRouter API key found..." -> run vision_helper_check_config to see how keys are resolved.
-  - "Error: Model not found..." -> run vision_helper_list_models and pass a valid model id.
-  - "Error: Image is N bytes, which exceeds MAX_IMAGE_SIZE..." -> shrink the image or raise MAX_IMAGE_SIZE.
-  - "Error: ... only accept PNG, JPEG, WebP, or GIF ..." -> convert the image to a supported format.`,
+The response is prefixed with the model and image sources used; long analyses are truncated at ${CHARACTER_LIMIT} characters. Errors carry actionable guidance (missing key, invalid model, oversized image, unsupported format).`,
       inputSchema: AnalyzeImageSchema,
       annotations: {
         readOnlyHint: true,
@@ -71,17 +53,25 @@ Error Handling:
     },
     async (params: AnalyzeImageParams) => {
       try {
+        const quick = params.quick === true;
         const keyInfo = await getApiKey();
         if (keyInfo === null) {
           return missingApiKeyResult();
         }
 
-        const model = params.model?.trim() || (await getEffectiveDefaultModel());
+        const sources = Array.isArray(params.image) ? params.image : [params.image];
+        if (quick && sources.length > 1) {
+          return errorResult(
+            "Error: quick mode accepts exactly one image. Omit 'quick' (or set it to false) " +
+              "to analyze multiple images together."
+          );
+        }
+
+        const model = params.model?.trim() || (await (quick ? getEffectiveQuickModel() : getEffectiveDefaultModel()));
         const fallbackModel = (await getEffectiveFallbackModel()).trim();
         const maxImageSize = await getMaxImageSize();
         const timeoutMs = await getRequestTimeoutMs();
 
-        const sources = Array.isArray(params.image) ? params.image : [params.image];
         const images = await Promise.all(
           sources.map((source) => loadImage(source, maxImageSize))
         );
@@ -95,12 +85,13 @@ Error Handling:
           );
         }
 
-        const prompt = params.prompt?.trim() || DEFAULT_ANALYSIS_PROMPT;
+        const prompt = params.prompt?.trim() || (quick ? DEFAULT_QUICK_PROMPT : DEFAULT_ANALYSIS_PROMPT);
         const analysis = await analyzeImage({
           apiKey: keyInfo.value,
           model,
-          detailed: true,
-          fallbackModel: fallbackModel.length > 0 && fallbackModel !== model ? fallbackModel : undefined,
+          quick,
+          detailed: !quick,
+          fallbackModel: !quick && fallbackModel.length > 0 ? fallbackModel : undefined,
           images,
           prompt,
           maxTokens: params.max_tokens,
@@ -110,8 +101,9 @@ Error Handling:
 
         const imageList = images.map((img) => `- ${img.sourceLabel} (${img.mimeType}, ${img.byteLength} bytes)`);
         const fallbackNote = analysis.fallbackUsed ? ` (primary '${model}' unavailable — used fallback)` : "";
+        const label = quick ? "Quick vision analysis" : "Vision analysis";
         const header = [
-          `## Vision analysis (${analysis.model})${fallbackNote}`,
+          `## ${label} (${analysis.model})${fallbackNote}`,
           ...imageList,
           "",
         ].join("\n");

@@ -5,11 +5,6 @@ An MCP server that adds **vision capability to any LLM**. Models that cannot see
 forwards the image to a **vision-capable model on [OpenRouter](https://openrouter.ai)**,
 then returns the analysis as text.
 
-Built as a more robust replacement for
-[TheNomadInOrbit/Vision-MCP-Server](https://github.com/TheNomadInOrbit/Vision-MCP-Server):
-no build-step assumptions, lazy key resolution, Windows `setx`-style environment variable
-support, image format sniffing, request retries, and clear actionable errors.
-
 ## Requirements
 
 - Node.js 18+ (tested on 22)
@@ -48,8 +43,8 @@ The API key and options are resolved, in priority order:
    (`HKCU\Environment`), i.e. what `setx` writes. This matters: GUI apps (VS Code,
    Kilo, Claude Desktop, ...) do **not** re-read user env vars changed after they
    were launched, so a key set with `setx` after launching the client would otherwise
-   be invisible. The server reads the registry itself, so `setx` values work with no
-   client restart.
+   be invisible. The server reads the registry itself (re-read on a short refresh
+   cycle), so `setx` values work with no client restart.
 3. **Windows system environment variables** — registry
    `HKLM\SYSTEM\...\Session Manager\Environment`.
 
@@ -60,18 +55,16 @@ On non-Windows platforms only step 1 applies.
 | `OPENROUTER_API_KEY` | OpenRouter API key (required for analysis) | — |
 | `OPENROUTER_MODEL` | Default vision model ID | `qwen/qwen3.8-max` |
 | `OPENROUTER_FALLBACK_MODEL` | Fallback model tried automatically when the primary model's provider is busy or fails | `google/gemini-3.7-flash` |
-| `OPENROUTER_QUICK_MODEL` | Default model for `vision_helper_quick_analyze` | `meta/muse-glimmer-30b` |
+| `OPENROUTER_QUICK_MODEL` | Default model when `quick: true` is passed to `vision_helper_analyze_image` | `meta/muse-glimmer-30b` |
 | `MAX_IMAGE_SIZE` | Max image payload bytes | `10485760` (10 MB) |
 | `OPENROUTER_TIMEOUT_MS` | Per-request timeout | `120000` (120 s) |
 
 > The model can also be chosen **per call** via the `model` argument of
-> `vision_helper_analyze_image` / `vision_helper_quick_analyze`, overriding the
-> environment default.
+> `vision_helper_analyze_image`, overriding the environment default.
 
 ### Kilo (VS Code extension) configuration
 
-Add this server as its **own** MCP entry (it does not replace or share tools with any
-other vision server you have configured). This example appends a `vision-helper` entry
+Add this server as its **own** MCP entry. This example appends a `vision-helper` entry
 to the `mcp` object in your Kilo config file (e.g. `~/.config/kilo/kilo.json` on
 Windows):
 
@@ -110,9 +103,7 @@ block only if you want it explicit in the config.
 
 ## Tools
 
-This server is a standalone MCP server with its own tool names
-(`vision_helper_*`), so it can run side by side with other vision MCP servers
-without tool collisions.
+This server exposes its tools under its own `vision_helper_*` names.
 
 ### `vision_helper_analyze_image`
 
@@ -120,11 +111,12 @@ Analyze one or more images with an OpenRouter vision model.
 
 | Argument | Type | Description |
 |---|---|---|
-| `image` | `string \| string[]` | **Required.** An http(s) URL, local file path, `file://` URI, `data:` URI, or raw base64 string. Pass an array (up to 5) to analyze several images together, e.g. to compare screenshots. Only PNG, JPEG, WebP, and GIF are accepted (the formats OpenRouter supports for vision input); relative file paths resolve against the MCP client's working directory, so prefer absolute paths or URLs. |
+| `image` | `string \| string[]` | **Required.** An http(s) URL, local file path, `file://` URI, `data:` URI, or raw base64 string. Pass an array (up to 5) to analyze several images together, e.g. to compare screenshots. Only PNG, JPEG, WebP, and GIF are accepted (the formats OpenRouter supports for vision input); relative file paths resolve against the server's working directory, so prefer absolute paths or URLs. |
 | `prompt` | `string` | Optional instruction, e.g. `"Transcribe all text in this screenshot"`. Defaults to a general detailed description. |
 | `model` | `string` | OpenRouter model ID, e.g. `qwen/qwen3.8-max`. Defaults to `OPENROUTER_MODEL`, then to the built-in default. |
 | `max_tokens` | `number` | Max tokens for the answer (64–16000). |
 | `temperature` | `number` | Sampling temperature (0–2). |
+| `quick` | `boolean` | Set `true` for a fast, cheap analysis of a **single** image — a yes/no, a short caption, or an object/color check. Uses `OPENROUTER_QUICK_MODEL` (default `meta/muse-glimmer-30b`), caps output at 1024 tokens, and forces minimal reasoning. |
 
 If the model's provider is busy or a request fails transiently (HTTP 429, 5xx,
 timeout, or network error), the server automatically retries with the
@@ -139,47 +131,25 @@ Examples of things to ask your assistant:
 - "Compare these two images: img1.png and img2.png" (pass an array)
 - "Read the text from this image and list the objects: <path>"
 
-### `vision_helper_quick_analyze`
+### Detailed vs quick analysis
 
-Analyze an image **fast and cheap** for time-sensitive checks. Uses a low-latency,
-high-throughput default model, caps its output, and forces minimal reasoning —
-ideal for a quick yes/no, a short caption, or an object check when speed matters
-more than exhaustive detail.
+`vision_helper_analyze_image` runs in two modes:
 
-| Argument | Type | Description |
-|---|---|---|
-| `image` | `string` | **Required.** An http(s) URL, local file path, `file://` URI, `data:` URI, or raw base64 string. |
-| `prompt` | `string` | A short question or instruction (max 500 chars), e.g. `"Is this icon red?"`. Defaults to a concise description. |
-| `model` | `string` | OpenRouter model ID. Defaults to `OPENROUTER_QUICK_MODEL`, then to `meta/muse-glimmer-30b`. |
-
-The default `meta/muse-glimmer-30b` is chosen for cost and speed (very cheap per
-token, low latency, high throughput); override it globally with
-`OPENROUTER_QUICK_MODEL` or per call with the `model` argument.
-
-Examples of things to ask your assistant:
-
-- "Quickly, what is in this image? <path>"
-- "Is this screenshot blurry? <url>"
-- "Give me a one-line caption for this image: <path>"
-
-### Which analysis tool should I use?
-
-| Need | Tool |
+| Need | Mode |
 |---|---|
-| Detailed, thorough understanding — transcribe all text, describe objects/people/layout, reason about complex content, or compare several images at once | `vision_helper_analyze_image` |
-| A fast, cheap, concise answer — a yes/no, a short caption, an object/color check, "is this blurry?", or a high-volume/time-sensitive check | `vision_helper_quick_analyze` |
+| Detailed, thorough understanding — transcribe all text, describe objects/people/layout, reason about complex content, or compare several images at once | default |
+| A fast, cheap, concise answer — a yes/no, a short caption, an object/color check, "is this blurry?", or a high-volume/time-sensitive check on one image | `quick: true` |
 
-Both tools describe images to an LLM that cannot see them. Prefer
-`vision_helper_analyze_image` when completeness, precision, or detail matters more
-than speed (it can also take an **array** of up to 5 images to compare). Prefer
-`vision_helper_quick_analyze` when latency and cost matter more than detail and a
-single image needs just a quick read.
+Prefer the default mode when completeness, precision, or detail matters more than
+speed (it can take an **array** of up to 5 images to compare). Prefer `quick: true`
+when latency and cost matter more than detail and a single image needs just a quick
+read.
 
 ### `vision_helper_list_models`
 
 List vision-capable models currently on OpenRouter (filtered to image-input models) so
 you or the user can pick one. Arguments: `search` (substring on ID/name, e.g. `gemini`,
-`qwen`, `claude`), `limit` (default 25), `offset`, `response_format` (`markdown`|`json`).
+`qwen`, `claude`), `limit` (default 25), `offset`.
 
 ### `vision_helper_check_config`
 
@@ -192,8 +162,8 @@ size/time limits. The key is always masked (e.g. `sk-or-…40a0`).
 - The server starts even when no key is configured; key resolution is lazy, so a key
   set with `setx` works without restarting anything.
 - Chat-completion requests retry up to 3 times on 429 / 5xx / network errors, honoring
-  `Retry-After` when present. If a model's provider is still busy after retries,
-  `vision_helper_analyze_image` automatically falls back to the
+  `Retry-After` when present (capped at 15 s). If a model's provider is still busy after retries,
+  `vision_helper_analyze_image` automatically falls back (in the default detailed mode) to the
   `OPENROUTER_FALLBACK_MODEL` model (`google/gemini-3.7-flash` by default) before giving up.
 - Image downloads are streamed with a hard byte cap and a 30 s timeout; MIME type is
   sniffed from magic bytes, so raw base64 payloads need no explicit type. Only the
@@ -213,7 +183,7 @@ size/time limits. The key is always masked (e.g. `sk-or-…40a0`).
 | Symptom | Fix |
 |---|---|
 | `vision_helper_analyze_image` returns "No OpenRouter API key found" | Run `vision_helper_check_config`. Set the key in the client's `environment`, or `setx OPENROUTER_API_KEY sk-or-v1-...` and start the client fresh. |
-| "resolved from: Windows user environment variables" but the key is stale | Keys are read from the registry each time a tool runs, so an updated `setx` is picked up immediately — no reboot needed. |
+| "resolved from: Windows user environment variables" but the key is stale | Registry values are re-read on a short refresh cycle (about once a minute), so an updated `setx` is picked up without restarting the client or server. |
 | "Error: Model not found on OpenRouter (HTTP 404)" | The model ID is invalid, renamed, or deprecated. Run `vision_helper_list_models` and pass a current ID via the `model` argument. |
 | "Error: Insufficient OpenRouter credits (HTTP 402)" | Add credits at https://openrouter.ai/settings/credits. |
 | "Image is N bytes, which exceeds MAX_IMAGE_SIZE" | Shrink/compress the image, or raise `MAX_IMAGE_SIZE` (cap 50 MB). |

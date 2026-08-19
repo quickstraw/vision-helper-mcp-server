@@ -15,7 +15,7 @@ export const DEFAULT_MODEL = "qwen/qwen3.8-max";
 export const DEFAULT_FALLBACK_MODEL = "google/gemini-3.7-flash";
 
 /**
- * Default model for the quick analysis tool (vision_helper_quick_analyze).
+ * Default model used when `quick: true` is passed to vision_helper_analyze_image.
  * Chosen for low latency and high throughput: cheap, fast, and image-capable
  * on OpenRouter. Overridable via the OPENROUTER_QUICK_MODEL env variable.
  */
