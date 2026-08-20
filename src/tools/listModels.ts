@@ -18,15 +18,8 @@ export function registerListModelsTool(server: McpServer): void {
   server.registerTool(
     "vision_helper_list_models",
     {
-      title: "List Vision Models on OpenRouter (Vision Helper)",
-      description: `List vision-capable models currently available on OpenRouter, so you (or the user) can pick which model to use for image analysis.
-
-Models are filtered to those that accept image input. Use the 'search' argument to narrow by provider or family (e.g. 'gemini', 'claude', 'qwen', 'gpt'), and limit/offset for pagination. Returns a compact list of model IDs with provider, context length, and input price.
-
-Examples:
-  - "Which vision models can I use?" -> no arguments
-  - "Find a fast cheap vision model" -> search="flash"
-  - "What vision models does Google offer?" -> search="google/gemini"`,
+      title: "List Vision Models (Vision Helper)",
+      description: `List vision-capable models currently available on OpenRouter, so you or the user can pick one for image analysis. Use it to find a valid model ID (e.g. when a configured model fails) or when asked which models are available. Narrow with 'search' (substring on provider or family, e.g. 'gemini', 'qwen') and paginate with limit/offset. Returns model IDs with context length and input price.`,
       inputSchema: ListModelsSchema,
       annotations: {
         readOnlyHint: true,

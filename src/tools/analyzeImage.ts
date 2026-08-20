@@ -5,13 +5,9 @@ import type { z } from "zod";
 import {
   CHARACTER_LIMIT,
   DEFAULT_ANALYSIS_PROMPT,
-  DEFAULT_FALLBACK_MODEL,
-  DEFAULT_MODEL,
-  DEFAULT_QUICK_MODEL,
   DEFAULT_QUICK_PROMPT,
   MAX_IMAGE_COUNT,
   MAX_TOTAL_IMAGE_BYTES,
-  QUICK_DEFAULT_MAX_TOKENS,
   SUPPORTED_FORMATS,
 } from "../constants.js";
 import {
@@ -33,16 +29,12 @@ export function registerAnalyzeImageTool(server: McpServer): void {
   server.registerTool(
     "vision_helper_analyze_image",
     {
-      title: "Analyze Image with a Vision Model (Vision Helper)",
-      description: `Analyze one or more images using a vision-capable model from OpenRouter, returning the model's analysis as text. Use this whenever you need to know what is in an image but you cannot see images yourself.
+      title: "Analyze Image (Vision Helper)",
+      description: `Analyze one or more images with a vision-capable model on OpenRouter and return the analysis as text. Use this whenever you need to know what is in an image but you cannot see it yourself.
 
-Default mode is **detailed analysis**: use it for thorough understanding — transcribe all readable text, describe objects/people/colors/layout, reason about ambiguous or complex content, or compare several images (pass an array, up to ${MAX_IMAGE_COUNT}). It requests high reasoning effort and a higher token budget, and uses a high-quality model by default ('${DEFAULT_MODEL}').
+Default mode is detailed and thorough (high reasoning effort, high-quality model, automatic retry and fallback). Pass quick: true for a fast, cheap answer (quick model, ~1024-token output, minimal reasoning) — e.g. a yes/no, a caption, or an object check.
 
-Pass **quick: true** for a fast, cheap analysis of a single image — a yes/no, a short caption, or an object/color check. Quick mode uses the quick model ('${DEFAULT_QUICK_MODEL}'), caps output at ${QUICK_DEFAULT_MAX_TOKENS} tokens, and forces minimal reasoning.
-
-Accepts an http(s) URL, local file path, file:// URI, data: URI, or raw base64. Only ${SUPPORTED_FORMATS} are accepted (per OpenRouter); remote URLs are validated against private/internal hosts before fetching. Relative file paths resolve against the server's working directory — prefer absolute paths or URLs. If the model's provider is busy or fails transiently (429/5xx/timeout/network), the request is retried, then falls back to the fallback model ('${DEFAULT_FALLBACK_MODEL}') automatically (detailed mode).
-
-The response is prefixed with the model and image sources used; long analyses are truncated at ${CHARACTER_LIMIT} characters. Errors carry actionable guidance (missing key, invalid model, oversized image, unsupported format).`,
+Accepts an http(s) URL, local file path, file:// URI, data: URI, or raw base64 (${SUPPORTED_FORMATS} only); pass an array of up to ${MAX_IMAGE_COUNT} to compare images (state the comparison in the prompt). Long analyses are truncated at ${CHARACTER_LIMIT} characters.`,
       inputSchema: AnalyzeImageSchema,
       annotations: {
         readOnlyHint: true,
@@ -60,12 +52,6 @@ The response is prefixed with the model and image sources used; long analyses ar
         }
 
         const sources = Array.isArray(params.image) ? params.image : [params.image];
-        if (quick && sources.length > 1) {
-          return errorResult(
-            "Error: quick mode accepts exactly one image. Omit 'quick' (or set it to false) " +
-              "to analyze multiple images together."
-          );
-        }
 
         const model = params.model?.trim() || (await (quick ? getEffectiveQuickModel() : getEffectiveDefaultModel()));
         const fallbackModel = (await getEffectiveFallbackModel()).trim();

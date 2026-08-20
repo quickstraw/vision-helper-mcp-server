@@ -45,7 +45,7 @@ Usage: vision-helper-mcp [--help]
 
 Tools:
   vision_helper_analyze_image  Analyze image(s) from URL, file path, data URI, or base64
-                               (pass quick: true for a fast, cheap single-image analysis)
+                               (pass quick: true for fast, cheap analysis)
   vision_helper_list_models    List vision-capable models on OpenRouter
   vision_helper_check_config   Show where the API key and default model are loaded from
 

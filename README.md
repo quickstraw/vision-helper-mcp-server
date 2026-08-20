@@ -116,13 +116,14 @@ Analyze one or more images with an OpenRouter vision model.
 | `model` | `string` | OpenRouter model ID, e.g. `qwen/qwen3.8-max`. Defaults to `OPENROUTER_MODEL`, then to the built-in default. |
 | `max_tokens` | `number` | Max tokens for the answer (64–16000). |
 | `temperature` | `number` | Sampling temperature (0–2). |
-| `quick` | `boolean` | Set `true` for a fast, cheap analysis of a **single** image — a yes/no, a short caption, or an object/color check. Uses `OPENROUTER_QUICK_MODEL` (default `meta/muse-glimmer-30b`), caps output at 1024 tokens, and forces minimal reasoning. |
+| `quick` | `boolean` | Set `true` for a fast, cheap analysis — a yes/no, a short caption, an object/color check, or a quick comparison of several images (array, up to 5). Uses `OPENROUTER_QUICK_MODEL` (default `meta/muse-glimmer-30b`), caps output at 1024 tokens, and forces minimal reasoning. |
 
 If the model's provider is busy or a request fails transiently (HTTP 429, 5xx,
 timeout, or network error), the server automatically retries with the
 `OPENROUTER_FALLBACK_MODEL` model (`google/gemini-3.7-flash` by default) so the
-analysis does not fail. The response header shows which model actually answered
-and notes when a fallback was used.
+analysis does not fail. This fallback applies to the default detailed mode
+(`quick: true` does not fall back). The response header shows which model
+actually answered and notes when a fallback was used.
 
 Examples of things to ask your assistant:
 
@@ -138,12 +139,11 @@ Examples of things to ask your assistant:
 | Need | Mode |
 |---|---|
 | Detailed, thorough understanding — transcribe all text, describe objects/people/layout, reason about complex content, or compare several images at once | default |
-| A fast, cheap, concise answer — a yes/no, a short caption, an object/color check, "is this blurry?", or a high-volume/time-sensitive check on one image | `quick: true` |
+| A fast, cheap, concise answer — a yes/no, a short caption, an object/color check, "is this blurry?", or a high-volume/time-sensitive check (multiple images allowed, up to 5) | `quick: true` |
 
 Prefer the default mode when completeness, precision, or detail matters more than
 speed (it can take an **array** of up to 5 images to compare). Prefer `quick: true`
-when latency and cost matter more than detail and a single image needs just a quick
-read.
+when latency and cost matter more than detail and a concise read is enough.
 
 ### `vision_helper_list_models`
 

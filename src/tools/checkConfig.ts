@@ -1,7 +1,7 @@
 /** vision_helper_check_config tool: report where the API key and model are loaded from. */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DEFAULT_FALLBACK_MODEL, DEFAULT_MODEL, DEFAULT_QUICK_MODEL } from "../constants.js";
+import { DEFAULT_MODEL } from "../constants.js";
 import {
   getApiKey,
   getConfiguredModel,
@@ -18,24 +18,8 @@ export function registerCheckConfigTool(server: McpServer): void {
   server.registerTool(
     "vision_helper_check_config",
     {
-      title: "Check Vision Helper MCP Configuration",
-      description: `Diagnose why vision analysis may be failing. Reports whether an OpenRouter API key is configured, where it was loaded from (MCP client environment, Windows user environment variables, or Windows system environment variables), which model would be used by default, and the configured size/time limits.
-
-The key is only shown masked (e.g. sk-or-v1-…a0) — never in full.
-
-Args:
-  - (none)
-
-Returns:
-  A short markdown report with:
-  - API key: present or missing, plus the source it was resolved from.
-  - Default model: from OPENROUTER_MODEL, or the built-in default ('${DEFAULT_MODEL}').
-  - Quick model: from OPENROUTER_QUICK_MODEL, or the built-in default ('${DEFAULT_QUICK_MODEL}').
-  - Fallback model: tried automatically if the default model's provider is busy ('${DEFAULT_FALLBACK_MODEL}').
-  - MAX_IMAGE_SIZE and request timeout.
-
-Examples:
-  - Use when vision_helper_analyze_image fails with "No OpenRouter API key found" to confirm where keys are (or are not) configured.`,
+      title: "Check Vision Helper Configuration",
+      description: `Diagnose vision analysis configuration problems. Reports whether the OpenRouter API key is set and where it was loaded from, which models would be used (default, quick, fallback), and the configured size/time limits. The key is only shown masked. Run this when analysis fails with a missing-key or configuration error.`,
       inputSchema: CheckConfigSchema,
       annotations: {
         readOnlyHint: true,

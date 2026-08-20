@@ -10,24 +10,22 @@ export const AnalyzeImageSchema = z
         z
           .string()
           .min(1)
-          .describe(
-            "A single image. Accepted forms: an http(s) URL, a local file path, a file:// URI, a data: URI (data:image/png;base64,...), or a raw base64 string."
-          ),
+          .describe("A single image: http(s) URL, local file path, file:// URI, data: URI, or raw base64."),
         z
           .array(z.string().min(1))
           .min(1)
           .max(MAX_IMAGE_COUNT)
-          .describe(`Multiple images (up to ${MAX_IMAGE_COUNT}) analyzed together, e.g. to compare screenshots.`),
+          .describe(`Multiple images (up to ${MAX_IMAGE_COUNT}) analyzed together for comparison.`),
       ])
-      .describe("Image to analyze: a URL, local file path, data URI, raw base64, or an array of these."),
+      .describe("Image to analyze: URL, file path, data URI, raw base64, or an array of these."),
     prompt: z
       .string()
       .min(1)
       .max(2_000)
       .optional()
       .describe(
-        "Optional instruction for the vision model describing what to look for. " +
-          "Example: 'Transcribe all text in this screenshot'. When omitted, a general detailed description is used."
+        "Optional instruction for the vision model, e.g. 'Transcribe all text in this screenshot'. " +
+          "When omitted, a general detailed description is used."
       ),
     model: z
       .string()
@@ -35,9 +33,8 @@ export const AnalyzeImageSchema = z
       .max(200)
       .optional()
       .describe(
-        "OpenRouter model ID to use for vision analysis, e.g. 'qwen/qwen3.8-max'. " +
-          "Defaults to the OPENROUTER_MODEL environment variable, then to a built-in default. " +
-          "Use vision_helper_list_models to discover current vision-capable models."
+        "OpenRouter model ID, e.g. 'qwen/qwen3.8-max'. Defaults to OPENROUTER_MODEL, then a built-in default; " +
+          "see vision_helper_list_models for options."
       ),
     max_tokens: z
       .number()
@@ -56,9 +53,8 @@ export const AnalyzeImageSchema = z
       .boolean()
       .optional()
       .describe(
-        "Set true for a fast, cheap analysis of a single image: uses the quick model " +
-          "(OPENROUTER_QUICK_MODEL), caps output at 1024 tokens, and forces minimal reasoning. " +
-          "Good for a quick yes/no, a short caption, or an object/color check."
+        "Set true for a fast, cheap analysis: quick model (OPENROUTER_QUICK_MODEL), ~1024-token output, " +
+          "minimal reasoning. Good for yes/no checks, captions, object checks, or brief comparisons (up to 5 images)."
       ),
   })
   .strict();

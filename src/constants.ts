@@ -48,7 +48,7 @@ export const DETAILED_DEFAULT_MAX_TOKENS = 8192;
 
 /** Default prompt for quick analysis — concise answer, not a full description. */
 export const DEFAULT_QUICK_PROMPT =
-  "Briefly describe what is in this image in a few short sentences. " +
+  "Briefly describe what is in the provided image(s) in a few short sentences. " +
   "Note any readable text. Be concise.";
 
 /** Default maximum image payload size in bytes (10 MB). */
